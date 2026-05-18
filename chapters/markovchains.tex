@@ -1,0 +1,377 @@
+\paragraph{Motivation for learning this}
+In the previous set of lectures, we briefly mentioned \textbf{Langevin dynamics}. Given a target distribution $\pi$, you can initialize your samples anywhere $X_0$ then time-evolve them according to
+\begin{align}
+	X_{t+h} & = X_t + h \nabla \log \pi(X_t)  + \sqrt{2h} \, Z & \text{Discrete Time}\\
+	dX_t & = \nabla \log \pi(X_t) \, dt + \sqrt 2 \, dW_t & \text{Continuous Time}
+\end{align}
+and as $t \to \infty$, your samples will converge to $X_\infty \sim \pi$ (target measure). 
+\\
+
+Langevin fell under a special class of dynamics called \textbf{Markov Processes / Markov Chains}. These lectures will walk us through some of the tools \& techniques to analyze these processes. Markov chains show us in many disciplines, so to give the reader a consistent viewpoint, I'll adopt my POV (which is a computational statistician interested in the math; meaning you only have oracle access to $\pi$, and sometimes only have oracle access to the normalize density $\tilde \pi$ associated with $\pi = \tilde \pi / Z$.), but hopefully the lessons can give the reader enough to generalize this knowledge to other problems.  
+\\
+\\
+From this view point, there's a couple questions that jump out to me
+\begin{enumerate}
+	\item Can we develop other algorithms which can generate samples from $\pi$?
+	\item Once we specify a sampling algorithm, can we quantify how quickly samples will converge to $\pi$?
+	\item Many algorithms are easy to specify in continuous time, but we implement only in discrete time. Can we quantify how the discretization affects the analysis?
+\end{enumerate}
+To keep us grounded, we'll work through these questions by looking back to Langevin, but the theory will stay general.
+
+
+\section{Discrete-Time Markov Chains}
+Consider a stochastic process $(X_t)_t$, and it's corresponding marginal over time $\text{Law}(X_t) := \pi_t$. The name of the game is to track how a state $\pi_t$ evolves over time. In these lecture notes, we'll look at a specific class of dynamics, called Markov Chains
+\begin{definition}
+	[Time-Homogenous Markov Chain] A discrete-time stochastic process $(X_t)_t$ is a Markov Chain if $p(X_{t+1} | X_t, ..., X_0) = p(X_{t+1} | X_t)$, denoted as the transition kernel. It is time-homogenous because the kernel is time-independent.
+\end{definition}
+In this case, the dynamics of the system are completely governed by the transition kernel. 
+\begin{itemize}
+	\item When the state space $\Omega$ is continuous, $\pi$ is a probability density function ($\pi \geq 0$ and $\int_\Omega \pi(x) \, dx = 1$). The dynamics are
+	\begin{align}
+		\pi_{t+1}(y) = \int P(x,y)\,  \pi_t(x) \, dx, \qquad P(x,y) = p(X_{t+1} = y| X_t = x)
+	\end{align}
+	The notation of $P(x,y)$ is chosen s.t. it can be read, the probability of starting at $x$ and ending up at $y$.
+	\item If the state space is discrete, then $\pi_t$ is a vector in the probability simplex ($\pi_t$ is a vector, $[\pi_t]_i \geq 0$ and $\sum_i [\pi_t]_i = 1$). The dynamics turn into a matrix equation
+	\begin{align}
+		\pi_{t+1} = \pi_t P, \qquad P_{ij} = \mathbb P(X_{t+1} = j | X_t = i)
+	\end{align}
+	Because $P_{ij}$ represents probabilities $\sum_j P_{ij} = 1$. This is called a \textbf{stochastic matrix}
+\end{itemize}
+Some other fun facts,
+\begin{itemize}
+	\item When you apply $P$ multiple times, you're evolving multiple steps. E.g. $P^k$ time evolves for $k$ steps.
+	\item The eigenvector $\pi = \pi P$ corresponds to the \textbf{stationary distribution} / fixed point.
+\end{itemize}
+
+\begin{eg}
+	Looking back at our motivating example, Langevin dynamics. It is also a Markov Chain
+	\begin{align}
+		dX_t &=  \nabla \log \pi(X_t) dt + \sqrt 2 dW_t\\
+		X_{t + h} & = X_t + h\, \nabla \log \pi(X_t) + \sqrt{2h} Z & \text{(Discretization)}
+	\end{align}
+	First, let's prove it's Markovian
+	
+	Now let's derive the transition kernel $p(X_{t+h} | X_t = x)$
+	\begin{align}
+		X_{t + h} & = X_t + h\, \nabla \log \pi(X_t) + \sqrt{2h} Z\\
+		X_{t + h} | X_t =x & \overset{d}{=} x + h \nabla \log \pi (x) +\sqrt{2 h} Z
+	\end{align}
+	The probability distribution of $Z$ is $\mathcal N(0, \mathbb I)$. We can use the rules of Gaussian random variables
+	\begin{align}
+		b + \sigma Z & \sim \mathcal N(b, \sigma^2 \mathbb I)\\
+		\therefore x + h \nabla \log \pi(x) + \sqrt{2 h} & \sim \mathcal N( x + h \nabla \log \pi(x), \; 2h \mathbb I)
+	\end{align} 
+	So if the RHS is drawn from a Gaussian, therefore the LHS is also a Gaussian. Therefore the probability distribution of $X_{t+h} = x' | X_t=x$ is
+	\begin{align}
+		p(x' | x) = \frac{1}{Z} \exp \Big( (x' - (x + h \nabla \log \pi(x)))^2 / 4 h \Big)
+	\end{align}
+\end{eg}
+
+
+\subsection{Stationary Distribution}
+Since our objective is to construct a Markov chains which has a stationary distribution. It turns out a chain has a stationary distribution under two sufficient conditions
+\begin{enumerate}
+	\item \emph{Irreducibility:} It is possible to get from $x$ to another state $x'$ w/ probability $>0$ in a finite number of steps
+	\item \emph{Aperiodicity:} It is possible to return to any state at any time. I.e. $\exists n$ s.t. $\forall \omega \in \Omega$ and $\forall n ' > n$, $\mathbb P(X_{n'} = i | X_0 = i) >0$.
+\end{enumerate}
+The first prevents absorbing states, e.g. states that we can never leave. The second prevents transition operations such as
+\begin{align}
+	T = \begin{pmatrix}
+		0 & 1 \\ 1 & 0
+	\end{pmatrix}
+\end{align}
+which is a chain that alternates between 1 and 2 without ever settling. These conditions constrain the types of Markov chains to get a nice result.
+\begin{theorem}
+	[Perron-Frobenius] An irreducible \& aperiodic Markov Chain $P$ 
+	\begin{enumerate}
+		\item Admits a unique stationary distribution $\pi$
+		\item The stationary distribution $\pi$ is the eigenvector of $P$ corresponding to the largest eigenvalue $|\lambda| = 1$.
+	\end{enumerate}
+\end{theorem}
+The proof is more about linear algebra than Markov Chains, so it's omitted.\\
+\\
+The importance of the theorem is that the eigenvector corresponding to the largest eigenvalue is the stationary distribution. Visualize the coordinate transformation of the matrix $P$. Repeated applications of $P$ will slowly project your vector along eigenvector
+\begin{fact} For an irreducible \& aperiodic Markov Chain $P$ with stationary distribution $\pi$, repeated applications of $P$ will make any initialization $\pi_0$ converge to $\pi$.
+	\begin{align}
+		\lim_{k \to \infty} \pi_0 P^k = \pi
+	\end{align}
+\end{fact}
+The proof will be shown in the section on convergence rates.
+
+
+\paragraph{Detailed Balance and Metropolis-Hastings Algorithm}
+You might wonder, given oracle access to $\pi$, how can we construct a Markov chain $P$ which emits $\pi$ as the stationary distribution. \\
+\\
+Well, say you're at the stationary distribution $\pi$, then you'd hope for the following properties
+\begin{enumerate}
+	\item Invariant under time-evolution: $\pi = \pi P$
+	\item Invariant under reverse time-evolution $\pi_i = \sum_j p(x_{t+1} = j | x_{t} = i) \pi_j \implies \pi = P^T \pi$
+\end{enumerate}
+
+\begin{definition}
+	[Detailed Balance] It is the balance between transition rates
+	\begin{align}
+		\pi(y) p(x | y) = \pi(x) p(y | x)
+	\end{align}
+	where $p$ is the transition kernel of a Markov Chain.
+\end{definition}
+\begin{fact}
+	Let $p$ be the transition kernel associated with a Markov chain. If  $(p, \pi)$ satisfies detailed balance, then $\pi$ is the stationary distribution of the chain.
+\end{fact}
+\begin{proof}
+	\begin{align}
+		\pi(y) p(x|y) & = \pi(x) p(y|x)
+	\end{align}
+	Just integrate w.r.t. $y$	\begin{align}
+		\sum_y \pi(y) p(x|y) & = \pi(x) \sum_y p(y|x)\\
+		\sum_y \pi(y) p(x|y) & = \pi(x)& \sum_y p(y| x) = 1\\
+		\pi P & = \pi 
+	\end{align}
+	and then $x$
+	\begin{align}
+		\pi(y) \sum_x p(x| y) & = \sum_x \pi(x) p(y|x)\\
+		\pi& = \pi P
+	\end{align}
+	"It seems too easy", Jonathan Goodman.
+\end{proof}
+As the person running experiments, I simply want to specify a target distribution $\pi$ \& a proposal kernel $p$, and check which one works well. However not every transition kernel satisfies detailed balance for arbitrary $\pi$. Perhaps we can create a framework which always emits detailed balance.\\
+\\
+Consider 
+
+
+
+
+Metroplist-Hasting rejection is a way to create a transition kernel $p(\cdot | x)$ which satisies detailed balance.
+\begin{align}
+	\alpha(x | x') = \min \left( \frac{\pi(x) p(x' | x)}{\pi(x') p(x | x')}, \ 1 \right)
+\end{align}
+
+\begin{algorithm}
+\caption{Metropolis--Hastings}
+\begin{algorithmic}[1]
+\Require Target $\pi$, proposal $p(\cdot\mid x)$, initial $X_0$, steps $N$
+\For{$t = 0, 1, \dots, N-1$}
+    \State Propose $X' \sim p(\cdot \mid X_t)$
+    \State $\alpha \gets \min\!\left(1,\ \dfrac{\pi(X')\,p(X_t \mid X')}{\pi(X_t)\,p(X' \mid X_t)}\right)$
+    \State Draw $u \sim \mathrm{Uniform}(0,1)$
+    \If{$u \le \alpha$}
+        \State $X_{t+1} \gets X'$ \Comment{accept}
+    \Else
+        \State $X_{t+1} \gets X_t$ \Comment{reject}
+    \EndIf
+\EndFor
+\State \Return $(X_0, \dots, X_N)$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{eg}
+	[Metropolis-Adjusted Langevin (MALA)] For Langevin dynamics, we proved that it has the stationary distribution $\pi$. However this was in continuous time. Does this still hold when we discretized time?
+	\\
+	\\\
+	Recall the Euler-Maruyama discretized Langevin
+	\begin{align}
+		X_{t+h} & = X_t + h \nabla \log \pi(X_t) + \sqrt{2h} \, Z\\
+		p(x' | x) & = \frac{1}{Z} \exp \left( -\frac{(x' - x - h \nabla \log \pi(x))^2}{4h}\right)
+	\end{align}
+	this is known as \textbf{Unadjusted Langevin (ULA)}. It's clear the kernel doesn't satisfy detailed balance (for arbitrary $\pi$), as there's no $\pi$ term in the kernel. Although detailed balance is "sufficient, not necessary" that you converge to $\pi$, turns out the discretization makes you sample a biased version of $\pi$. We can correct for this bias by using the proposal kernel in the Metropolis-Hasting step.\\
+	\\
+	Let's calculate the acceptance ratio for the ULA kernel. This procedure is called \textbf{Metropolis-Adjusted Langevin (MALA)}
+	\begin{align}
+		\log \frac{p(x'| x)}{p(x|x')}  & = \frac{1}{4h} \left[ (x' - x + h \nabla \log \pi(x))^2 - (x - x' + h \nabla \log \pi(x'))^2 \right]\\
+		& = \frac{h}{4} (\nabla \log \pi(x)^2 - \nabla \log \pi(x')^2)  + \frac{1}{2}\langle x' - x, \nabla \log \pi(x) + \nabla \log \pi(x')\rangle
+	\end{align} 
+	which you plug into $\alpha = \min \left( \frac{\pi(x) p(x' | x)}{\pi(x') p(x | x')}, \ 1 \right)$.\\
+	\\
+	You can also run the Langevin 
+\end{eg}
+\begin{problem}
+	The previous MALA algorithm was stated for single step. Consider a modification to the MALA algorithm for multiple steps
+	
+	What is the new correction factor $p(x' | x)/p(x|x')$ in the Metropolis acceptance ratio?
+\end{problem}
+
+\paragraph{Sampling without Detailed Balance} 
+For example: sequential monte carlo \& diffusion models, bouncy particle sampler.
+
+
+\subsection{Convergence to Stationary Distribution}
+It's nice that we can construct Markov chains where we know the stationary distribution. However, I need to run this and get some results, so perhaps we can engineer transition kernels with quicker convergence?
+
+\paragraph{Discrete Space \& Discrete Time Markov Chains}
+Let's now prove convergence fact from the previous section, the proof will give us a nice insight into convergence rates.
+\begin{fact}
+	Consider an irreducible \& aperiodic Markov Chain $P$ with stationary distribution $\pi$. Repeated applications of $P$ will make any initialization $\pi_0$ converge to $\pi$.
+	\begin{align}
+		\lim_{k \to \infty} \pi_0 P^k = \pi
+	\end{align}
+\end{fact}
+\begin{proof}
+	For simplicity (and w/o loss of generality), assume $P$ is diagonalizable with eigensystem $\{(\lambda_i, v_i)\}_{i=1}^d$, where $\lambda_1 > ... > \lambda_d$. By Perron-Frobenius theorem $\lambda_1 = 1$ and $v_1 = \pi$.\\
+	\\
+	Decompose $\pi_0$ into a linear combination of the eigensystem
+	\begin{align}
+		\pi_0 P^k & = (c_1 \pi + c_{2} v_{2} ... + c_d v_d) P^k\\
+		& = c_1 (1)^k \pi+ c_{2} \lambda_{2}^k v_{2} + ... + c_d \lambda_d^k v_d\\
+		\lim_{k \to \infty}\pi_0 P^k & =  c_1 \pi + \mathcal O(\lambda_{2}^k) = c_1 \pi
+	\end{align}
+	You can kill off $\lambda_{2}$ (and below) because it's smaller than $\lambda_2 = 1$.
+	Because the state still lives in $\mathcal P(\Omega)$, it must normalize, therefore $c_1 = 1$.\\
+	\\
+	Note: power iteration can be generically applied to find the eigenvector of the largest eigenvalue. The convergence rate is generically controlled by the \textbf{spectral gap} $|\lambda_1| - |\lambda_2|$.
+\end{proof}
+Notice, for finite $k$ you're converging to the stationary distribution in corrections of $\lambda_{2}$ (second largest eigenvalue). This means spectral properties of the matrix controls the convergence rate of our Markov Chains.
+\begin{definition}
+	[Spectral Gap] The spectral gap for a matrix $P$ is defined as
+	\begin{align}
+		\gamma = |\lambda_1| - |\lambda_2|
+	\end{align}
+	For irreducible \& aperiodic Markov chains, $\lambda_1 = 1$, meaning the convergence is entirely controlled by $\lambda_2$.
+\end{definition}
+\paragraph{Continuous Space \&  Discrete/Continuous Time Markov Chains}
+When the state space is continuous, the time-evolution $P$ gets promoted to an operator. And you can imagine finding eigenvalues of some operator will be quite difficult. We need to change our tools a little bit!
+
+
+
+
+
+\section{Continuous-Time Markov Chains}
+When we go to continuous space Markov Chains, it's easy to start with continuous time and use the theory of ODE/PDEs to make statements, then bound the discretization error.
+\begin{definition}
+	[Markov Semigroup Operator] Given a Markov Process $(X_t)_{t\geq 0}$, tis semigroup $(P_t)_{t\geq0}$ acts on test functions $f : \mathbb R^d \to \mathbb R$ by
+	\begin{align}
+		(P_t f) (x) \equiv \mathbb E[f (X_t) | X_0 = x]
+	\end{align}
+\end{definition}
+Why is it called a semigroup? In math a semigroup is when you have closure under composition $g_1 \circ g_2 \in G$, and have an identity $e \circ g = g \circ e \in G$ (s.t. $e \in G$). If you have closure under inverse, then this is promoted to be a group. 
+\begin{property}
+	Let's figure out in what sense this is a semigroup
+	\begin{enumerate}
+	\item Identity: $P_0 = \textsf{Id}$.
+	
+	\emph{Proof:} $(P_0 f) (x) = \mathbb E[f(X_0) | X_0 = x] = f(x)$, so $P_0$ acts as an identity operator.
+	
+	\item Composition: $P_t \circ P_s = P_{t+s}$.
+	
+	\emph{Proof:} 
+	\begin{align}
+		(P_s f)(x) & = \mathbb E[f(X_s) | X_0 = x]\\
+		(P_t P_s f)(x) & = \mathbb E[\mathbb E[f(X_s) | X_0 = X_t] | X_0 = x]\\
+		& = \mathbb E[\mathbb E[f(X_{s+t}) |X_t] | X_0 =x]\\
+		& = \mathbb E[f(X_{s+t}) | X_0 = x] = (P_{t+s} f)(x)
+	\end{align}
+\end{enumerate}
+\end{property}
+
+
+
+
+\begin{definition}
+	[Generator] The generator $\mathcal L$ is defined as
+	\begin{align}
+		\mathcal L f := \lim_{h \downarrow 0} \frac{P_h f - f}{h}
+	\end{align}
+\end{definition}
+
+\begin{eg}
+	Let's compute the infinitesimal generator for Langevin dynamics. Since we'll take the time-increment to be small, we can start at the Euler-Maruyama discretization.
+	\begin{align}
+		X_h = X_0 + h \nabla \log \pi(X_0) + \sqrt{2 h} Z
+	\end{align} 
+	where $Z \sim \mathcal N(0, \mathbb I)$. To compute $P_h f = \mathbb E[f(X_h) | X_0 = h]$, we can apply a test function $f$ to $X_h$, and then Taylor expand to second order, that way remaining terms are order $h$ (taking the limit $h \to 0$ in the infinitesimal generator will kill $h^{3/2}$ terms).
+	\begin{align}
+	f(X_h) & = f(X_0) + f'(X_0) (X_h-X_0) + \frac 1 2 f''(X_0)(X_h-X_0)^2 + \mathcal O((X_h-X_0)^3)\\
+	& = f(X_0) + \langle \nabla f(X_0) ,  \, -h \nabla \log \pi(X_0)  + \sqrt{2h} Z\rangle \nonumber \\
+	& \quad + \frac{1}{2} (-h \nabla \log \pi(X_0)  + \sqrt{2h} Z)^T \nabla^2 f(X_0) (-h \nabla \log \pi(X_0)  + \sqrt{2h} Z)  
+\end{align}
+Now we can take the expectation value
+\begin{align}
+	\mathbb E[f(X_h) & | X_0=x] = -h \langle \nabla f(x) , \nabla \log \pi(x) \rangle +  h \, \text{Tr}[\nabla^2 f(x)]
+\end{align}
+Plugging into the definition of the generator
+\begin{align}
+	\mathcal L f =  \langle f , \nabla \log \pi \rangle + \Delta f
+\end{align}
+\end{eg}
+\begin{problem}
+	Find the infintesimal generator associated for a generic stochastic process
+	\begin{align}
+		dX_t= \mu_t(X_t) dt + \sigma_t dW_t
+	\end{align}
+	Does it look familiar?
+\end{problem}
+
+\subsection{Convergence to Stationary Distribution}
+To quantify the convergence rate to the stationary distribution, we could inspect a "distance" measure between the marginal $p_t$ of the Markov Chain and the target $\pi$, and see if its growing / shrinking in time.
+\begin{definition}
+	[$f$-Divergence] Given a convex function $f: \mathbb R \to \mathbb R$, the $f$-Divergence is
+	\begin{align}
+		D_{f}(p \| \pi) \equiv \mathbb E_{p} \left[f  \left( \frac{p }{\pi} \right) \right] = \int p(x) \, f\left(\frac{p(x)}{\pi(x)}\right) \, dx
+	\end{align}
+	A common choice for $f := \log$; this choice is called the Kullback-Leibler (KL) Divergence
+	\begin{align}
+		\textsf{KL}(p \| \pi) := D_{\log} (p \| \pi) = \int p(x) \, \log \left(\frac{p(x)}{\pi(x)}\right) \, dx
+	\end{align}
+	It is preferred by computational staticians because it can be numerically estimated $\textsf{KL}(p \| \pi) = \mathbb E_p [\log p]   - \mathbb E_p [\log \pi]$
+\end{definition}
+\begin{property}
+	\begin{enumerate}
+		\item Not symmetric: $D_f(p \| \pi) \neq D_f(\pi \| p)$
+		\item Positive-definite: $D_f(p \| \pi) \geq 0$, and $D_f(p \| q) = 0 \iff p = q$		
+	\end{enumerate}
+\end{property}
+I am introducing this new family of divergences, instead of using $\textsf{TV}(p, \pi) = \frac{1}{2} \int |p(x) - \pi(x)| \, dx$ because the $\textsf{TV}$ is not differentiable. 
+\begin{eg} Let's compute the $f$-Divergence's time evolution under Langevin. Recall the law for Langevin for a target measure $\pi \propto e^{-U(x)}$ is
+	\begin{align}
+		\partial_t p_t = - \nabla \cdot (\nabla U\, p_t) + \Delta p_t
+	\end{align}
+	\begin{align}
+		\partial_t D_f(p_t \| \pi) & = \int \dot p_t (x) \, f \left(\frac{p_t(x)}{\pi(x)} \right) + \frac{p_t(x) \dot p_t(x)}{\pi(x)} f' \left(\frac{p_t(x)}{\pi(x)} \right)\\
+		& = \int \dot p_t(x) \left[  f \left(r_t \right) + r_t f '\left(r_t\right) \right] & r_t \equiv p_t / \pi\\
+	\end{align}
+	If we specialize to the \textsf{KL} divergence, $f  := \log$
+\end{eg}
+
+
+
+
+\begin{definition}
+	[Log-Sobolev Inequality (LSI)] $\pi$ satisfies a Log-Sobolev Inequality with constant $\lambda >0$, if
+	\begin{align}
+		\forall p \in \mathcal P, \quad \textsf{KL}(p \| \pi) \leq \frac{1}{2\lambda} \textsf{FI}(p \| \pi)
+	\end{align}
+\end{definition}
+
+
+\begin{fact}
+	[Bakery-Emery Criterion] Suppose that $\pi = e^{-U}$ with $U$ $\beta$-strongly convex and $\lambda$-Lipschitz, that is $\lambda \mathbb I \preceq \nabla^2 f \preceq \beta \mathbb I$. Then $\pi$ satisfies LSI with constant $\lambda$.
+\end{fact}
+
+
+
+
+\begin{thebibliography}{XYZ99}  % widest label, for alignment
+
+\bibitem[Che26]{SinhoLC}
+Sinho Chewi. \emph{Log Concave Sampling}. \url{https://chewisinho.github.io/main.pdf}.
+
+\bibitem[KE25]{KuleshovErmonPGM}
+Volodymyr Kuleshov and Stefano Ermon. \emph{Probabilistic Graphical Models Lecture Notes}. \url{https://ermongroup.github.io/cs228-notes/}
+
+\bibitem[Bru25]{BrunaIR}
+Joan Bruna. \emph{Inference and Representation Lecture Notes}. \url{https://joanbruna.notion.site/ir25}
+
+\bibitem[Bru24]{BrunaMDL}
+Joan Bruna. \emph{Mathematics of Deep Learning Lecture Notes}. \url{https://joanbruna.notion.site/Mathematics-of-DL-2c72610b1a9c401dbf624b3355fa0f2d}
+
+
+\bibitem[Goo20]{Goodman}
+Jonathan Goodman. \emph{Markov Chain Monte Carlo Lecture Notes}. \url{https://math.nyu.edu/~goodman/teaching/MonteCarlo20/MonteCarloMethods.html}
+
+\bibitem[Owe13]{Owen}
+Art B. Owen. \emph{Monte Carlo theory, methods, and examples}. \url{https://artowen.su.domains/mc/}
+\end{thebibliography}
+
+
+
+
+

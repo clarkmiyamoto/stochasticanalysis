@@ -1,0 +1,200 @@
+%%% Document Formatting
+\documentclass[12pt,fleqn]{article}
+\usepackage[a4paper,
+            bindingoffset=0.2in,
+            left=0.75in,
+            right=0.75in,
+            top=0.8in,
+            bottom=0.8in,
+            footskip=.25in]{geometry}
+\setlength\parindent{10pt}
+
+%%% Imports
+\usepackage{amsmath, amsfonts, amssymb, amsthm}
+\usepackage{dsfont}
+\numberwithin{equation}{section}
+\usepackage{mathtools}
+\usepackage{cancel}
+\usepackage{empheq}
+\usepackage{algorithm}
+\usepackage{algpseudocode}  % preamble
+
+% Visualization
+\usepackage{graphicx}
+
+
+%%% Formatting
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,      
+    urlcolor=cyan,
+    pdftitle={SCSI Lecture Notes},
+    pdfpagemode=FullScreen,
+}
+\urlstyle{same}
+
+%%% Custom Environments
+ 
+
+% theorems
+% Dependencies
+\usepackage[usenames,dvipsnames]{xcolor}
+\usepackage{amsmath, amsfonts, mathtools, amsthm, amssymb}
+\usepackage{thmtools}
+\usepackage[framemethod=TikZ]{mdframed}
+\mdfsetup{skipabove=1em,skipbelow=0em}
+
+\theoremstyle{definition}
+
+
+\makeatother
+\usepackage{thmtools}
+\usepackage[framemethod=TikZ]{mdframed}
+\mdfsetup{skipabove=1em,skipbelow=0em}
+
+
+\theoremstyle{definition}
+
+\declaretheoremstyle[
+    headfont=\bfseries\color{ForestGreen!70!black}, bodyfont=\normalfont,
+    mdframed={
+        linewidth=2pt,
+        rightline=false, topline=false, bottomline=false,
+        linecolor=ForestGreen, backgroundcolor=ForestGreen!5,
+    }
+]{thmgreenbox}
+
+\declaretheoremstyle[
+    headfont=\bfseries\color{NavyBlue!70!black}, bodyfont=\normalfont,
+    mdframed={
+        linewidth=2pt,
+        rightline=false, topline=false, bottomline=false,
+        linecolor=NavyBlue, backgroundcolor=NavyBlue!5,
+    }
+]{thmbluebox}
+
+\declaretheoremstyle[
+    headfont=\bfseries\color{NavyBlue!70!black}, bodyfont=\normalfont,
+    mdframed={
+        linewidth=2pt,
+        rightline=false, topline=false, bottomline=false,
+        linecolor=NavyBlue
+    }
+]{thmblueline}
+
+\declaretheoremstyle[
+    headfont=\bfseries\color{RawSienna!70!black}, bodyfont=\normalfont,
+    mdframed={
+        linewidth=2pt,
+        rightline=false, topline=false, bottomline=false,
+        linecolor=RawSienna, backgroundcolor=RawSienna!5,
+    }
+]{thmredbox}
+
+\declaretheoremstyle[
+    headfont=\bfseries\color{RawSienna!70!black}, bodyfont=\normalfont,
+    numbered=no,
+    mdframed={
+        linewidth=2pt,
+        rightline=false, topline=false, bottomline=false,
+        linecolor=RawSienna, backgroundcolor=RawSienna!1,
+    },
+    qed=\qedsymbol
+]{thmproofbox}
+
+\declaretheoremstyle[
+    headfont=\bfseries\color{NavyBlue!70!black}, bodyfont=\normalfont,
+    numbered=no,
+    mdframed={
+        linewidth=2pt,
+        rightline=false, topline=false, bottomline=false,
+        linecolor=NavyBlue, backgroundcolor=NavyBlue!1,
+    },
+]{thmexplanationbox}
+
+\declaretheoremstyle[
+    headfont=\bfseries\color{Plum!70!black}, bodyfont=\normalfont,
+    mdframed={
+        linewidth=2pt,
+        rightline=false, topline=false, bottomline=false,
+        linecolor=Plum, backgroundcolor=Plum!5,
+    }
+]{thmpurplebox}
+
+\declaretheoremstyle[
+    headfont=\bfseries\color{Sepia!70!black}, bodyfont=\normalfont,
+    mdframed={
+        linewidth=2pt,
+        rightline=false, topline=false, bottomline=false,
+        linecolor=Sepia, backgroundcolor=Sepia!5,
+    }
+]{thmsepiabox}
+
+\declaretheoremstyle[
+    headfont=\bfseries\color{ForestGreen!70!black}, bodyfont=\normalfont,
+    mdframed={
+        linewidth=2pt,
+        rightline=false, topline=false, bottomline=false,
+        linecolor=ForestGreen
+    }
+]{thmgreenline}
+
+% \declaretheoremstyle[headfont=\bfseries, bodyfont=\normalfont, mdframed={ nobreak } ]{thmgreenbox}
+% \declaretheoremstyle[headfont=\bfseries, bodyfont=\normalfont, mdframed={ nobreak } ]{thmredbox}
+% \declaretheoremstyle[headfont=\bfseries, bodyfont=\normalfont]{thmbluebox}
+% \declaretheoremstyle[headfont=\bfseries, bodyfont=\normalfont]{thmblueline}
+% \declaretheoremstyle[headfont=\bfseries, bodyfont=\normalfont, numbered=no, mdframed={ rightline=false, topline=false, bottomline=false, }, qed=\qedsymbol ]{thmproofbox}
+% \declaretheoremstyle[headfont=\bfseries, bodyfont=\normalfont, numbered=no, mdframed={ nobreak, rightline=false, topline=false, bottomline=false } ]{thmexplanationbox}
+
+\declaretheorem[style=thmgreenbox, name=Definition]{definition}
+\declaretheorem[style=thmgreenbox, name=Assumption]{assumption}
+\declaretheorem[style=thmbluebox, numbered=no, name=Example]{eg}
+\declaretheorem[style=thmredbox, name=Proposition]{prop}
+\declaretheorem[style=thmredbox, name=Theorem]{theorem}
+\declaretheorem[style=thmredbox, name=Lemma]{lemma}
+\declaretheorem[style=thmredbox, numbered=no, name=Corollary]{corollary}
+\declaretheorem[style=thmpurplebox, name=Problem]{problem}
+\declaretheorem[style=thmsepiabox, numbered=no, name=Fact]{fact}
+\declaretheorem[style=thmgreenline, name=Property]{property}
+
+\declaretheorem[style=thmproofbox, name=Proof]{replacementproof}
+\renewenvironment{proof}[1][\proofname]{\vspace{-10pt}\begin{replacementproof}}{\end{replacementproof}}
+
+
+\declaretheorem[style=thmexplanationbox, name=Proof]{tmpexplanation}
+\newenvironment{explanation}[1][]{\vspace{-10pt}\begin{tmpexplanation}}{\end{tmpexplanation}}
+
+\declaretheorem[style=thmblueline, numbered=no, name=Remark]{remark}
+\declaretheorem[style=thmblueline, numbered=no, name=Note]{note}
+
+\newmdenv[ 
+  topline=false,
+  bottomline=false,
+  skipabove=\topsep,
+  skipbelow=\topsep
+]{sidework}
+
+%%%%% ------------------ %%%%%
+%%% Title
+\title{Techniques in Stochastic Analysis}
+\author{Clark Miyamoto (cm6627@nyu.edu)}
+\date{\today}
+\begin{document}
+
+
+\maketitle
+
+\begin{abstract}
+	Some informal lectures notes on techniques in stochastic analysis.
+\end{abstract}
+
+\tableofcontents
+
+\newpage
+\part{Markov Semigroup Theory}
+\input{chapters/markovchains.tex}
+
+
+\end{document}
