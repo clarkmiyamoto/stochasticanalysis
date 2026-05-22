@@ -1,3 +1,8 @@
+\paragraph{The Sampling Problem}
+In the previous lectures, we were concerned with the problem in generative models. You have access to examples $\{x_i\}_i \overset{iid}{\sim} \pi$, and you want to learn a model $\pi_\theta \approx \pi$ to generate new samples.\\
+\\
+In these lectures we're concerned about a similar, yet very different problem. The sampling problem. Here you have oracle (point-wise) access to $\pi(x)$, and you want to generate samples $x \sim \pi$. Sometimes you only have access to the un-normalized density $\pi = \tilde \pi / Z$, where $Z = \int \tilde \pi \, dx$.
+
 \paragraph{Motivation for learning this}
 In the previous set of lectures, we briefly mentioned \textbf{Langevin dynamics}. Given a target distribution $\pi$, you can initialize your samples anywhere $X_0$ then time-evolve them according to
 \begin{align}
@@ -48,9 +53,7 @@ Some other fun facts,
 	\begin{align}
 		dX_t &=  \nabla \log \pi(X_t) dt + \sqrt 2 dW_t\\
 		X_{t + h} & = X_t + h\, \nabla \log \pi(X_t) + \sqrt{2h} Z & \text{(Discretization)}
-	\end{align}
-	First, let's prove it's Markovian
-	
+	\end{align}	
 	Now let's derive the transition kernel $p(X_{t+h} | X_t = x)$
 	\begin{align}
 		X_{t + h} & = X_t + h\, \nabla \log \pi(X_t) + \sqrt{2h} Z\\
@@ -63,7 +66,7 @@ Some other fun facts,
 	\end{align} 
 	So if the RHS is drawn from a Gaussian, therefore the LHS is also a Gaussian. Therefore the probability distribution of $X_{t+h} = x' | X_t=x$ is
 	\begin{align}
-		p(x' | x) = \frac{1}{Z} \exp \Big( (x' - (x + h \nabla \log \pi(x)))^2 / 4 h \Big)
+		p(x' | x) = \frac{1}{Z} \exp \Big( -(x' - (x + h \nabla \log \pi(x)))^2 / 4 h \Big)
 	\end{align}
 \end{eg}
 
@@ -134,22 +137,22 @@ Well, say you're at the stationary distribution $\pi$, then you'd hope for the f
 	\end{align}
 	"It seems too easy", Jonathan Goodman.
 \end{proof}
-As the person running experiments, I simply want to specify a target distribution $\pi$ \& a proposal kernel $p$, and check which one works well. However not every transition kernel satisfies detailed balance for arbitrary $\pi$. Perhaps we can create a framework which always emits detailed balance.\\
+As the person running experiments, I simply want to specify a target distribution $\pi$ \& a proposal kernel $q$, and check which one works well. However not every transition kernel satisfies detailed balance for arbitrary $\pi$. Perhaps we can create a framework which always emits detailed balance.\\
 \\
-Consider 
-
-
-
-
-Metroplist-Hasting rejection is a way to create a transition kernel $p(\cdot | x)$ which satisies detailed balance.
+Consider choosing a new kernel $p(x' | x) = q(x' | x)\, \alpha(x' |x)$, where I'll soon specify $\alpha$. In the detailed balance equation
 \begin{align}
-	\alpha(x | x') = \min \left( \frac{\pi(x) p(x' | x)}{\pi(x') p(x | x')}, \ 1 \right)
+	\pi(x) q(y|x) \alpha(y |x) = \pi(y) q(x | y) \alpha(x|y) \implies \alpha(y|x) = \frac{\pi(y) q(x|y)}{\pi(x) q(y | x)}
 \end{align}
+For this to be a probability, the ratio must be $\leq 1$. However, this could easily be the other case, so let's symmetrize
+\begin{align}
+	\alpha(y | x) = \min \left( \frac{\pi(y) q(x | y)}{\pi(x) q(y | x)}, \ 1 \right)
+\end{align}
+
 
 \begin{algorithm}
 \caption{Metropolis--Hastings}
 \begin{algorithmic}[1]
-\Require Target $\pi$, proposal $p(\cdot\mid x)$, initial $X_0$, steps $N$
+\Require Target $\pi$, proposal $q(\cdot\mid x)$, initial $X_0$, steps $N$
 \For{$t = 0, 1, \dots, N-1$}
     \State Propose $X' \sim p(\cdot \mid X_t)$
     \State $\alpha \gets \min\!\left(1,\ \dfrac{\pi(X')\,p(X_t \mid X')}{\pi(X_t)\,p(X' \mid X_t)}\right)$
@@ -163,6 +166,25 @@ Metroplist-Hasting rejection is a way to create a transition kernel $p(\cdot | x
 \State \Return $(X_0, \dots, X_N)$
 \end{algorithmic}
 \end{algorithm}
+
+\begin{fact}
+	The Metropolis Hasting algorithm satisfies detailed balance.
+\end{fact}
+\begin{proof}
+	The corresponding transition kernel is
+	\begin{align}
+		p(x|y) = q(x|y) \alpha(x|y) + \delta(x-y) R(y), \quad R(y) = \int q(x|y) (1- \alpha(x|y)) dxd
+	\end{align}
+	Either $\alpha(y |x) = 1$ or $\alpha(x|y) = 1$. Assume the former
+	\begin{align}
+		\pi(y)  p(x|y) & = \pi(y) [q(x|y) + \delta(x-y) R(y)]\\
+		& = \pi(y) q(x|y) + \pi(x) \delta(x-y) R(x)\\
+		& = \pi(x) q(y|x) \frac{\pi(y) q(x|y)}{\pi(x) q(y|x)} + \pi(x) \delta(x-y) R(x)\\
+		& = \pi(x) [q(y|x) \alpha(y | x)  + \delta(x-y) R(x)]\\
+		& = \pi(x) p(y|x)
+	\end{align}
+\end{proof}
+
 
 \begin{eg}
 	[Metropolis-Adjusted Langevin (MALA)] For Langevin dynamics, we proved that it has the stationary distribution $\pi$. However this was in continuous time. Does this still hold when we discretized time?
@@ -180,14 +202,10 @@ Metroplist-Hasting rejection is a way to create a transition kernel $p(\cdot | x
 		\log \frac{p(x'| x)}{p(x|x')}  & = \frac{1}{4h} \left[ (x' - x + h \nabla \log \pi(x))^2 - (x - x' + h \nabla \log \pi(x'))^2 \right]\\
 		& = \frac{h}{4} (\nabla \log \pi(x)^2 - \nabla \log \pi(x')^2)  + \frac{1}{2}\langle x' - x, \nabla \log \pi(x) + \nabla \log \pi(x')\rangle
 	\end{align} 
-	which you plug into $\alpha = \min \left( \frac{\pi(x) p(x' | x)}{\pi(x') p(x | x')}, \ 1 \right)$.\\
-	\\
-	You can also run the Langevin 
+	which you plug into $\alpha = \min \left( \frac{\pi(x) p(x' | x)}{\pi(x') p(x | x')}, \ 1 \right)$.
 \end{eg}
 \begin{problem}
-	The previous MALA algorithm was stated for single step. Consider a modification to the MALA algorithm for multiple steps
-	
-	What is the new correction factor $p(x' | x)/p(x|x')$ in the Metropolis acceptance ratio?
+	The previous MALA algorithm was stated for single step. Consider a modification to the MALA algorithm for multiple steps. What is the new correction factor $p(x' | x)/p(x|x')$ in the Metropolis acceptance ratio?
 \end{problem}
 
 \paragraph{Sampling without Detailed Balance} 
@@ -220,6 +238,38 @@ Let's now prove convergence fact from the previous section, the proof will give 
 	Note: power iteration can be generically applied to find the eigenvector of the largest eigenvalue. The convergence rate is generically controlled by the \textbf{spectral gap} $|\lambda_1| - |\lambda_2|$.
 \end{proof}
 Notice, for finite $k$ you're converging to the stationary distribution in corrections of $\lambda_{2}$ (second largest eigenvalue). This means spectral properties of the matrix controls the convergence rate of our Markov Chains.
+
+\paragraph{Reversibility and Spectral Theorem}
+The proof above assumed $P$ is diagonalizable.
+
+\begin{fact}
+	[Detailed balance $\iff$ self-adjointness]
+	Let $P$ be the transition matrix of a Markov chain with stationary
+	distribution $\pi$, and suppose $(P,\pi)$ satisfies detailed balance
+	$\pi(x) P(x,y) = \pi(y) P(y,x)$. Then $P$ is self-adjoint on the weighted
+	space $L^2(\pi)$ equipped with the inner product
+	\begin{align}
+		\langle f, g \rangle_\pi = \sum_x \pi(x) f(x) g(x).
+	\end{align}
+	Consequently $P$ has real eigenvalues
+	$1 = \lambda_1 > \lambda_2 \geq \dots \geq \lambda_d \geq -1$
+	and a basis of eigenvectors orthonormal in $\langle \cdot, \cdot \rangle_\pi$.
+\end{fact}
+\begin{proof}
+	Define $D = \mathrm{diag}(\pi)$. Detailed balance reads
+	$D P = (D P)^T = P^T D$, i.e. $DP$ is symmetric. Form the similarity
+	transform $S = D^{1/2} P D^{-1/2}$. Note it is symmetric
+	\begin{align}
+		S^T & = D^{-1/2} P^T D^{1/2}\\
+		    & = D^{-1/2} (D P D^{-1}) D^{1/2} & P^T D = D P\\
+		    & = D^{1/2} P D^{-1/2} = S,
+	\end{align}
+	By the spectral theorem it has real eigenvalues and an orthonormal
+	eigenbasis. Since $P = D^{-1/2} S D^{1/2}$ is similar to $S$, it shares the same (real) eigenvalues, and its eigenvectors are the columns of
+	$D^{-1/2}$ applied to those of $S$, which are precisely orthonormal under
+	$\langle \cdot, \cdot \rangle_\pi$.
+\end{proof}
+
 \begin{definition}
 	[Spectral Gap] The spectral gap for a matrix $P$ is defined as
 	\begin{align}
@@ -227,6 +277,15 @@ Notice, for finite $k$ you're converging to the stationary distribution in corre
 	\end{align}
 	For irreducible \& aperiodic Markov chains, $\lambda_1 = 1$, meaning the convergence is entirely controlled by $\lambda_2$.
 \end{definition}
+
+\begin{theorem}
+	For a time-discrete \& reversible Markov chain $P$ with spectral gap $\gamma = 1 - \lambda_2$ (2nd largest eigenvalue of $P$). We converge 
+	\begin{align}
+		\|\pi_k - \pi\|_{\textsf{TV}} \leq  \frac{1}{2} \sqrt{\chi^2(\pi_0 \| \pi)} (1-\gamma)^k
+	\end{align}
+\end{theorem}
+
+
 \paragraph{Continuous Space \&  Discrete/Continuous Time Markov Chains}
 When the state space is continuous, the time-evolution $P$ gets promoted to an operator. And you can imagine finding eigenvalues of some operator will be quite difficult. We need to change our tools a little bit!
 
@@ -280,8 +339,8 @@ Why is it called a semigroup? In math a semigroup is when you have closure under
 	where $Z \sim \mathcal N(0, \mathbb I)$. To compute $P_h f = \mathbb E[f(X_h) | X_0 = h]$, we can apply a test function $f$ to $X_h$, and then Taylor expand to second order, that way remaining terms are order $h$ (taking the limit $h \to 0$ in the infinitesimal generator will kill $h^{3/2}$ terms).
 	\begin{align}
 	f(X_h) & = f(X_0) + f'(X_0) (X_h-X_0) + \frac 1 2 f''(X_0)(X_h-X_0)^2 + \mathcal O((X_h-X_0)^3)\\
-	& = f(X_0) + \langle \nabla f(X_0) ,  \, -h \nabla \log \pi(X_0)  + \sqrt{2h} Z\rangle \nonumber \\
-	& \quad + \frac{1}{2} (-h \nabla \log \pi(X_0)  + \sqrt{2h} Z)^T \nabla^2 f(X_0) (-h \nabla \log \pi(X_0)  + \sqrt{2h} Z)  
+	& = f(X_0) + \langle \nabla f(X_0) ,  \, h \nabla \log \pi(X_0)  + \sqrt{2h} Z\rangle \nonumber \\
+	& \quad + \frac{1}{2} (h \nabla \log \pi(X_0)  + \sqrt{2h} Z)^T \nabla^2 f(X_0) (-h \nabla \log \pi(X_0)  + \sqrt{2h} Z)  
 \end{align}
 Now we can take the expectation value
 \begin{align}
@@ -289,7 +348,7 @@ Now we can take the expectation value
 \end{align}
 Plugging into the definition of the generator
 \begin{align}
-	\mathcal L f =  \langle f , \nabla \log \pi \rangle + \Delta f
+	\mathcal L f =  \langle \nabla f , \nabla \log \pi \rangle + \Delta f
 \end{align}
 \end{eg}
 \begin{problem}
@@ -369,7 +428,13 @@ Jonathan Goodman. \emph{Markov Chain Monte Carlo Lecture Notes}. \url{https://ma
 
 \bibitem[Owe13]{Owen}
 Art B. Owen. \emph{Monte Carlo theory, methods, and examples}. \url{https://artowen.su.domains/mc/}
+
+\bibitem[LPW09]{LPWMixingTimes}
+David A. Levin, Yuval Peres, and Elizabeth L. Wilmer. \emph{Markov Chains and Mixing Times}. \url{https://www.cs.cmu.edu/~15859n/RelatedWork/MarkovChains-MixingTimes.pdf}
+
 \end{thebibliography}
+
+
 
 
 
