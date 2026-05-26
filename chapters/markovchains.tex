@@ -99,7 +99,7 @@ The importance of the theorem is that the eigenvector corresponding to the large
 		\lim_{k \to \infty} \pi_0 P^k = \pi
 	\end{align}
 \end{fact}
-The proof will be shown in the section on convergence rates.
+The proof is more informative to convergence rates, so I'll prove it later.k
 
 
 \paragraph{Detailed Balance and Metropolis-Hastings Algorithm}
@@ -269,6 +269,8 @@ The proof above assumed $P$ is diagonalizable.
 	$D^{-1/2}$ applied to those of $S$, which are precisely orthonormal under
 	$\langle \cdot, \cdot \rangle_\pi$.
 \end{proof}
+Notice  
+
 
 \begin{definition}
 	[Spectral Gap] The spectral gap for a matrix $P$ is defined as
@@ -283,6 +285,7 @@ The proof above assumed $P$ is diagonalizable.
 	\begin{align}
 		\|\pi_k - \pi\|_{\textsf{TV}} \leq  \frac{1}{2} \sqrt{\chi^2(\pi_0 \| \pi)} (1-\gamma)^k
 	\end{align}
+	where $\chi^2(\pi_0 \| \pi) \equiv \int [(\pi_0(x) / \pi(x))^2 - 1] dx$
 \end{theorem}
 
 
@@ -362,7 +365,7 @@ Plugging into the definition of the generator
 \subsection{Convergence to Stationary Distribution}
 To quantify the convergence rate to the stationary distribution, we could inspect a "distance" measure between the marginal $p_t$ of the Markov Chain and the target $\pi$, and see if its growing / shrinking in time.
 \begin{definition}
-	[$f$-Divergence] Given a convex function $f: \mathbb R \to \mathbb R$, the $f$-Divergence is
+	[$f$-Divergence] Given a convex function $f: \mathbb R \to \mathbb R$ s.t. $f(1) = 0$, the $f$-Divergence is
 	\begin{align}
 		D_{f}(p \| \pi) \equiv \mathbb E_{p} \left[f  \left( \frac{p }{\pi} \right) \right] = \int p(x) \, f\left(\frac{p(x)}{\pi(x)}\right) \, dx
 	\end{align}

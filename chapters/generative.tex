@@ -1,0 +1,376 @@
+
+
+Some lecture notes from when I TA'ed \emph{Machine Learning for Physicists}. To your benefit (or dismay) the writing style is for a grad student in the physics department. 
+
+\paragraph{Resources} Some reading material that I found helpful when learning about generative models.
+\begin{itemize}
+	\item \url{https://diffusion.csail.mit.edu/2026/index.html}. Accessible and well motivated notes. Notes are typeset and have recorded lectures. Additionally has a section on \textbf{discrete diffusion}.
+	\item \url{https://alexxthiery.github.io/posts/reverse_and_tweedie/reverse_and_tweedie.html}. A simple note on Tweedie's formula \& reverse time SDEs.
+	\item \url{https://joanbruna.notion.site/Syllabus-667e0fa5659448cd861f3326dec873a0}. Notes from Joan Bruna's course (lectures 9-12). More mathematically rigorous, but at the cost of accessibility.
+	\item \url{https://arxiv.org/pdf/2303.08797}. The original Stochastic Interpolants paper which unifies ODE \& SDE models. It's a great read, but assumes you're already familiar with generative models.
+	\item \url{https://lilianweng.github.io/posts/2021-07-11-diffusion-models/}. Once you feel comfortable with the theory, the question becomes how do we implement these in practice. This blog gives a nice overview of problems \& solutions in implementation.
+\end{itemize}
+
+
+\paragraph{The generative problem}
+Generative models tackle the following problem
+\begin{itemize}
+	\item \textbf{Given:} A dataset of samples $\mathcal D = \left\{ x_i \right\}_i$, s.t. $x_i \overset{iid}{\sim} \pi$. 
+	\item \textbf{Objective:} Generate new samples from $x \sim \pi_\theta \approx \pi$. Where $\pi_\theta$ is implicitly defined by a neural network.
+\end{itemize}
+Note this is different from sampling; there you're given oracle access to $\pi(x)$, rather than samples.\\
+\\
+The history of solving problem was originally solved by \textbf{(Variational) Autoencoders}. You learn an encoder \& decoder, which maps you from $\textsf{Data} \overset{E^\theta}{\to} \textsf{Latent} \overset{D^\phi}{\to} \textsf{Data}$; if you can easily sample \textsf{Latent} then plugging it into $D^\phi$ will sample \textsf{Data}. But why learn two models? What if $\textsf{Latent}$ was something generic, like a Gaussian distribution, and I learn a deterministic map s.t. the pushforward maps it to $\textsf{Data}$. I'll denote this map as $T_\theta$. Recall you can use the change of variables formula for probability distributions $p(x) = q(T^\theta(\cdot)) |\det T^\theta|$, but you'll need $\det T_\theta$ to be computationally feasible. You can use some tricks to make this happen, these class of models are called \textbf{Normalizing Flows}. However (1) these class of models are notoriously difficult to train, (2) there are infinitely many $T_\theta$ which do the mapping. It would be nice if there was more structure. You can imagine decomposing the map $T_\theta = T^\theta_1 \circ ... \circ T^\theta_n$, at each level it defines a probability distribution $(p_i^\theta)_{i \in [1, ..., n]}$ such that $p_1 = \textsf{Data}$ and $p_n = \textsf{Gaussian}$. What if we assert each probability distribution has to be a noisier version of the previous, until it's indistinguishable from a Gaussian, and instead we learn a denoising oracle. These are called \textbf{Diffusion} models. The training is a lot more stable, and we can start to make models that can sample high-dimensional distributions. However we have to specify the number of noising steps $n$ and then train the model; I want to specify this after training. What if there was a continuous-time formulation of this process, and you can choose the time-discretization post-hoc? This is called \textbf{Score-Base Diffusion}. Effectively you learn a term in a stochastic differential equation (SDE). You realize that simulating the SDE is very expensive, and you want to instead simulate an ODE, but moves through the same family of probability distributions. These are called \textbf{Flow Matching} models. Finally, you think about uniting the two frameworks, allowing the user to specify a path in probability space and then choose wether to train an ODE or SDE. This is called \textbf{Stochastic Interpolants}. This is currently where the field is at.
+\\
+\\
+In these lecture notes we'll cover Score-Base Diffusion and Stochastic Interpolants; which I find to be the most elegant \& natural to the physicist.
+
+
+
+\section{Review of Stochastic Differential Equations}
+You've probably heard of SDEs before, but they aren't covered in the main-stream physics education. So I'll attempt to do a brief introduction. 
+
+There was a botanist studying pollen grains in water. He noticed the motion was jittery, moving randomly in all directions. You can imagine a heuristic model being
+\begin{align}
+	X_{t+h} = X_t + h^\alpha \, Z_t
+\end{align}
+where $Z_t \sim \mathcal N(0, \mathbb I)$ (iid at every time $t$) is random noise, and $h$ is the step size (according to the time-discretization) to the power $\alpha$. In an attempt to find a continuous time model in the limit $h \to 0$ (discretization goes to zero), I'll recurse to time zero.
+\begin{align}
+	X_{t} &= X_{t-h} + h^\alpha \, Z_{t-h}\\
+	& = X_{t-2h} + h^\alpha \, (Z_{t-2h} + Z_{t-h})\\
+	& = X_{t-3h} + h^\alpha \, (Z_{t-3h} + Z_{t-2h} + Z_{t-h})\\
+	& = X_0 + h^\alpha \sum_{n=1}^{t/h } Z_{t - nh}
+\end{align}
+Since we're physicists, we can choose a coordinate system s.t. the initial position $X_0 = 0$. We now note that
+\begin{align}
+	h^\alpha \, \sum_{n=1}^{t/h  + 1} Z_{t - nh} \sim   \mathcal N(\left(0, h^{2\alpha - 1} t \right)
+\end{align}
+To keep the model independent on the size of the discretization, I'll choose $\alpha = 1/2$. Leaving us with
+\begin{align}
+	X_t - X_0 \sim \mathcal N(0, t)
+\end{align}
+This was quite heuristic, but we have some take aways. When making an infinitesimal that behaves randomly, it has units $\sqrt{t}$.
+
+Now that we have some intuition for how this motion behaves, we can develop something more rigorous but has the same characteristics.
+\begin{definition}
+	[Weiner Process / Brownian Motion] Brownian motion $(W_t)_{t\geq 0}$ is a stochastic process such that
+	\begin{enumerate}
+		\item Initializes at zero: $W_0 = 0$
+		\item Normal increments: $W_t - W_s \sim \mathcal N(0,(t-s) \mathbb I)$, for $ 0 \leq s \leq t$.
+		\item Independent increments: $W_{t_1} - W_{t_0}$ is independent from $W_{t_i} - W_{t_j}$.
+	\end{enumerate}
+\end{definition}
+The idea of a stochastic differential equations is to extend the dynamics of ODEs to the dynamics where you have random fluctuations of force. Such things are no-where differentiable, so how can we recover a derivative-esq operation w/o using a derivative? Well ODEs  have that
+\begin{align}
+	\frac{dX_t}{dt} = \mu_t(X_t) \implies X_{t+h} = X_t + h\, u_t(X_t) + \mathcal O(h^2)
+\end{align}
+Similarly for an SDE (ODE with stochastic fluctuations) have a discretization
+\begin{align}
+	X_{t+h} & = X_t + h u_t(X_t)  + (W_{t+h} - W_t) \, \sigma_t(X_t) + \mathcal O(h^{3/2}) \label{eqn:SDETrue}\\
+	& = X_t  + h u_t(X_t)  + \sqrt{h} \sigma_t(X_t) Z + \mathcal O(h^{3/2})
+\end{align}
+This particular choice of discretization is called the \textbf{Euler-Maruyama Discretization}.
+The $\mathcal O(h^{3/2})$ is because $W_{t+h} - W_t$ is order $\sqrt{h}$, so you can have a cross term like $h (W_{t+h} - W_t)$. For brevity, we'll use a shorthand for \ref{eqn:SDETrue}
+\begin{align}
+	dX_t = \mu_t(X_t) \, dt + \sigma_t(X_t)\, dW_t
+\end{align}
+
+\subsection{Particle Trajectories \& Probability Densities}
+Think about simulating the trajectory of individual particles. Re-running the simulation (w/ different RNG seeds) gave slightly different trajectories due to $dW_t$, meaning there's implicitly a probability distribution at each point in time. Turns out there's an exact correspondence between the SDE governing particle's motion, and a PDE which is the probability distribution over particles.
+
+\begin{theorem}
+	[Fokker-Planck Equation]
+	Consider the stochastic differential equation
+	\begin{align}
+		dX_t & = \mu_t(X_t) \, dt + \sigma_t dW_t\\
+		X_0 & \sim p_0 & \text{Boundary condition}
+	\end{align}
+	where $\mu_t : [0,1] \times \mathbb R^d \to \mathbb R^d$ and $\sigma_t : [0,1] \to \mathbb R_{\geq 0}$ are deterministic functions. Then the corresponding probability distribution $X_t \sim p_t$ solves a partial differential equation of the following form
+	\begin{align}
+		\partial_t p_t(x) & = - \nabla \cdot (\mu_t\, p_t) + \frac{\sigma_t^2}{2} \Delta p_t\\
+		p_{t=0} & = p_0 & \text{Boundary condition}
+	\end{align}
+\end{theorem}
+\emph{Proof:}  Since $X_t$ is a random variable, it has a corresponding probability density function. I'll notate this as $p_t$. Now you need to show that $p_t$ have a the corresponding time evolution. The trick to do this, is to recall the trick you employ when you show something is secretly a delta function. You would integrate it against a test function $f(x)$ and show it behaved as expected. We'll do the same thing.
+\begin{align}
+	\partial_t \mathbb E[f(X_t)] & = \lim_{h \to 0} \frac{1}{h} \mathbb E[f(X_{t+h}) - f(X_t)] \\
+	& = \lim_{h \to 0} \mathbb E[\nabla f^T\, u_t(X_t) + \frac{\sigma^2_t}{2} \Delta f(X_t) + \mathcal O(h)] & \text{Taylor expand}\\
+	& = \int \nabla f^T (x) u_t(x) p_t(x) +  \frac{\sigma^2_t}{2} \Delta f(x)  p_t(x) \, dx\\
+	& = \int -f(x) \, \nabla \cdot (u_t(x) p_t(x)) + f(x) \frac{\sigma^2_t}{2} \Delta p_t(x)\, dx & \text{Integrate by parts}
+\end{align}
+On the LHS
+\begin{align}
+	\partial_t \mathbb E[f(X_t)] = \int f(x) \partial_t p_t(x) \, dx
+\end{align}
+Put LHS = RHS, and you're done. $\hfill \Box$
+\\
+\\
+This is an extremely powerful thing you've just derived so a couple of notes
+\begin{itemize}
+	\item Numerically, instead of solving a PDE, you can simulate it by running a bunch of particles via the SDE and histogramming them. 
+	\item The Greens function $G(x',t',x,t)$ correspond to transition amplitudes $p(x', t' | x, t)$. This is not so surprising because in QFT the greens function corresponded to tree-level 2-point functions (covariances), and the kernel in Gaussian Processes corresponded to the autocorrelation time (covariance across time). 
+\end{itemize}
+
+
+\paragraph{Example: (Overdamped) Langevin Dynamics} What choice of $\mu_t$ and $\sigma_t$ leaves the distribution invariant $\partial_t p_t = 0$?
+\begin{align}
+	0 = \partial_t p_t & = -\nabla \cdot (\mu_t p_t) + \frac{\sigma_t^2}{2} \Delta p_t\\
+	& = \nabla \cdot (- \mu_t p_t + \frac{\sigma_t^2}{2} \nabla p_t)\\
+	& = \nabla \cdot [(- \mu_t + \frac{\sigma_t^2}{2} \nabla \log p_t ) p_t]
+\end{align}
+If you choose $\mu_t(x) = \frac{\sigma_t^2}{2} \nabla \log \pi(x)$, then the inside term vanishes ($\partial_t p_t = 0$) when $p_t = \pi$. The resulting SDE is
+\begin{align}
+	dX_t = \frac{\sigma_t^2}{2}\nabla \log \pi_t(X_t) \, dt + \sigma_t dW_t
+\end{align}
+Some comments
+\begin{itemize}
+	\item In physics, $\sigma_t \propto \sqrt{kT}$ (where $k$ is Boltzmann's constant, and $T$ is temperature) and  $p(x) = e^{-\beta U(x)} / Z$ (Boltzmann distribution). Implying $\nabla \log p_t(x) = - \beta \nabla U(x)$. Physically it is the equation of motion of a particle moving in a viscous fluid.
+	\item In statistics, if we set $\log p_t = \log \pi$ (target distribution), we can use this as a sampling algorithm. 
+	\item It takes infinite time to converge to the stationary distribution. Time-discretization makes you sample a biased-distribution (which you can correct using a Metropolis Hastings step).
+\end{itemize}
+
+
+\paragraph{Example: Ornstein-Uhlenbeck Process (Variance Preserving)}
+Let's solve the SDE where $\mu_t(X_t) = - \mu \, X_t$ and $\sigma_t = \sigma_t$. Note: "solution" to an SDE means we write $X_t = [...]$ as a random variable (or equivalently its distribution).
+\begin{align}
+	dX_t = - \mu \, X_t \, dt + \sigma_t dW_t, \qquad X_{t=0} = X_0
+\end{align}
+\begin{itemize}
+	\item If we recall the Langevin equation, $\nabla \log p_t(x) = - \frac{\mu \sigma^2_t}{2} \, x$, we recover the OU process. What distribution has that as a gradient...? A Gaussian! So it will converge to a Gaussian in the infinite time-limit.
+	\item Using Fokker Planck, we have a PDE on $\text{Law}(X_t) = p_t$
+	\begin{align}
+		\partial_t p_t = \mu \nabla \cdot (x\, p_t) + \frac{\sigma^2_t}{2}\Delta  p_t, && p_{t=0} = \text{Law}(X_0) := \pi
+	\end{align}
+	You can get the Greens function by solving this in Fourier space. It is given by
+	\begin{align}
+		p(x, t | x_0) = \frac{1}{(2\pi \Sigma^2(t))^{d/2}} \exp \left( -\frac{|x-  x_0 e^{-\mu t}|^2}{2 \Sigma^2(t)} \right)
+	\end{align}
+	where $\Sigma(t) = \int_0^t \sigma_s^2 e^{-2\mu(t-s)}\,ds$.
+	\item This is the forward process of diffusion models. In particular, it is the Variance Preserving SDE.
+\end{itemize}
+\paragraph{Example: Heat Equation (Variance Exploding)}
+In the case you noise the data by
+\begin{align}
+	dX_t = \sigma_t dW_t
+\end{align}
+this is called the variance exploding process. It is recommended to use the VP-process, but I've included it here for completeness.
+
+\subsection{Reversing Time}
+
+\begin{theorem}
+	[Reverse Kolmogorov Equation]
+	Given an SDE 
+	\begin{align}
+		dX_t & = \mu_t(X_t) \, dt + \sigma_t \, dW_t,  & \text{Law}(X_{t=0})  = p_0\\
+		\partial_t p_t & = - \nabla \cdot (\mu_t p_t) + \frac{\sigma_t^2}{2} \Delta ( p_t) & p_{t=0} = p_0
+	\end{align}
+	which evolves forwards in time $t = 0,..., T$.  There is a corresponding reversed process, which runs in $\tau = T - t$ (where $\tau$ increments from $0, ..., T$)
+	\begin{align}
+		dX_\tau &= [-\mu_{T-\tau}(X_\tau) + \sigma_{T-\tau}^2 \nabla \log p_{T-\tau}(X_\tau)] \, d\tau + \sigma_{T-\tau} d \tilde W_\tau & \text{Law}(X_{\tau=0}) = q_0\\
+		\partial_\tau q_\tau & = - \nabla \cdot [(-\mu_{T-\tau}(x) + \sigma_{T-\tau}^2 \nabla \log p_{T-\tau}(x)) q_\tau] + \frac{\sigma_{T-\tau}^2}{2} \Delta q_\tau & q_{\tau=0} = p_T
+ 	\end{align}
+ 	where $q_{\tau} = p_{T-\tau}$.
+\end{theorem}
+\emph{Proof:} Let $\tau := T-t$ and $q_\tau := p_{T-\tau} = p_{t}$. Let's use change of basis to find the $\tau$-time evolution on $q_\tau$.
+\begin{align}
+	q(\tau) & = p(T-\tau)\\
+	\partial_\tau q(\tau) & = \partial_\tau q(T-\tau) \\
+	& = - q'(T-\tau)  & \text{Chain Rule}
+\end{align}
+Let's substitute in the Fokker Planck equation. For simplicity $f_{\tau} = \mu_{T-\tau}$ and $g_{\tau} = \sigma_{T-\tau}$
+\begin{align}
+	\partial_\tau q_\tau & = \nabla \cdot(f_\tau \, p_{T-\tau}) - \frac{g_\tau^2}{2} \Delta p_{T-\tau} \\
+	& = \nabla \cdot(f_\tau \, q_\tau) - \frac{g_\tau^2}{2} \Delta q_\tau & \text{Definition of } q_\tau
+\end{align}
+In order to convert this back to the SDE formulation, the diffusion term must be positive semi-definite, so let's do some massaging
+\begin{align}
+	\partial_\tau q_\tau & = \nabla \cdot(f_\tau \, q_\tau) - \frac{g_\tau^2}{2} \nabla \cdot (\nabla q_\tau)\\
+	& = \nabla \cdot \left(f_\tau q_\tau - g_\tau^2 \nabla q_\tau \right) + \frac{g_\tau^2}{2} \nabla \cdot (\nabla q_\tau)\\
+	& = \nabla \cdot [(f_\tau - g_\tau^2 \nabla \log q_\tau)q_\tau] + \frac{g_\tau^2}{2} \Delta q_\tau\\
+	& = - \nabla \cdot [(-f_\tau + g_\tau^2 \nabla \log q_\tau)q_\tau] + \frac{g_\tau^2}{2} \Delta q_\tau
+\end{align}
+This gives us the time-reverse Fokker Planck. Now we can just apply our correspondence between PDE and SDE to get the reverse-SDE. \qed
+\\
+\\
+In diffusion models, if you use the reverse SDE at test-time, then this is the continuous-time formulation of diffusion models. This is called \textbf{score-based diffusion}.
+
+\subsection{Tweedie's Formula \& Score Based Diffusion}
+\paragraph{Tweedie's Formula}
+So the question is what is $\nabla \log p_t(x)$? So recall under the OU process, we say
+\begin{align}
+	X_t = \alpha_t X_0 + \beta_t Z
+\end{align} 
+where $x_0 \sim \pi$ and $z \sim \mathcal N(0, \mathbb I)$ (where they're drawn independently). Let $p_t := \text{Law}(x_t)$. Since you're adding two random variables, this corresponds to a convolution
+\begin{align}
+	p_t(x_t) & = \int \pi(x_0) \frac{1}{Z_t} \exp \left( - \frac{(x_t - \alpha_t x_0)^2}{2 \beta_t^2} \right) \, dx_0
+\end{align}
+Turns out the score corresponds to a posterior expectation. This result is called \textbf{Tweedie's Formula}
+\begin{align}
+	\nabla \log p_t(x_t) & = \frac{1}{\int \pi(x_0) \exp \left( - \frac{(x_t - \alpha_t x_0)^2}{2 \beta_t^2} \right)} \nabla_{x_t} \int \pi(x_0) \exp \left( - \frac{(x_t - \alpha_t x_0)^2}{2 \beta_t^2} \right)\\
+	& = \frac{-1}{...}  \int \pi(x_0) \exp(...) \frac{(x_t - \alpha_t x_0)}{\beta_t^2}\, dx_0\\
+	& = - \mathbb E_{X_0 | X_t} \left[ \frac{X_t -\alpha_t X_0}{\beta_t^2}  \Big | X_t = x_t\right] \\
+	& = - \frac{x_t - \alpha_t\,  \mathbb E_{X_0 | X_t} [X_0 | X_t = x_t] }{\beta_t^2} 
+\end{align}
+where the expectation $\mathbb E_{X_0|X_t}$ is taken over the distribution $p(x_0 | x_t) = \frac{1}{\tilde Z_t}   \pi(x_0) \exp \left( - (x_t- \alpha_t x_0)^2/2 \beta_t^2\right)$. An interpretation is the denoiser (best guess of clean data $X_0$ given noisy observation $x_t$) can be read from a rewritting of the equation: $\mathbb E[X_0 | X_t = x_t] = (x_t+ \beta_t^2 \, \nabla \log p_t(x_t))/\alpha_t$; saying the denoised guess, is the your observation plus moving it up the probability distribution a little.
+\\
+\\
+Another interpretation comes from applying our defining relationship $X_t = \alpha_t X_0 + \beta_t Z$, to rewrite the score
+\begin{align}
+	\nabla \log p_t(x_t) = - \frac{1}{\beta_t} \mathbb E[Z | X_t = x_t]
+\end{align}
+These conditional expectations are nice, because they are the optimizer of the mean squared error. Meaning you can model them by minimizing the $L_2$ loss
+\begin{align}
+	\arg \min_f\mathbb E[(x - f(y))^2] = \mathbb E[x|y]
+\end{align}
+\emph{Proof:}
+\begin{align}
+	\mathbb E[(x - f(y))^2] & = \mathbb E[x^2 + f(y)^2 -2 x f(y)]\\
+	& = \mathbb E[f(y)^2 - 2 x f(y)] + C\\
+	& = \mathbb E[f(y)^2 - 2 \mathbb E[x | y] f(y)] + C & \text{Tower property}\\
+	& = \mathbb E[f(y)^2 + \mathbb E[x|y]^2 - 2 \mathbb E[x|y]f(y)] + C\\
+	& = \mathbb E[(\mathbb E[x|y] - f(y))^2] + C
+\end{align}
+This is a convex objective, so $\arg \min_f$ yields the optimal choice: $\mathbb E[x|y]$. \qed
+\\
+\\
+This is all to say, you can rewrite conditional expectations as $L_2$ loss functions. So we've reduced this fancy problem to just minimizing the mean squared error
+\begin{align}
+	\mathcal L(\theta) & = \mathbb E_{x_0, z, t}[ (\eta^\theta_t(x_t) - z)^2] \\
+	& = \mathbb E_{x_0 \sim \pi}\mathbb E_{t \sim \text{Unif}[0,T]} \mathbb E_{z \sim \mathcal N(0, \mathbb I)} [(\eta^\theta_t(\alpha_t x_0 + \beta_t z) - z)^2]
+\end{align}
+Such that $\nabla \log p_t(x_t) = - \eta^\theta_t(x_t) / \beta_t$.
+
+\paragraph{Score Based Diffusion} We can finally put all our knowledge together to construct our first generative model. 
+\begin{enumerate}
+	\item \textbf{Learning:} The neural network implicitly models the score
+	\begin{align}
+		\nabla \log p_t^\theta(x_t) = - \eta_t^\theta(x_t) / \beta_t, \qquad \eta^\theta_t(x_t) = \mathbb E[Z | X_t = x_t]
+	\end{align}
+	where $X_t = \alpha_t X_0 + \beta_t Z$. The neural network can learn by minimizing the mean squared error
+	\begin{align}
+		\mathcal L(\theta) = \mathbb E_{X_0 \sim \pi}\mathbb E_{t \sim \text{Unif}[0,T]} \mathbb E_{Z \sim \mathcal N(0, \mathbb I)} [(\eta^\theta_t(\alpha_t X_0 + \beta_t Z) - Z)^2] 
+	\end{align}
+	where $\pi$ is the target distribution. 
+	\item \textbf{Inference:} The probability path was mapping $p_0 = \pi$ to $p_T \approx \mathcal N(0, \mathbb I)$ via the OU process. To generate samples we simulate the reverse Fokker Planck \& plug in the learned score
+	\begin{align}
+		dX_\tau = [-\mu_{T-\tau}(X_\tau) + \sigma_{T-\tau}^2 \nabla \log p^\theta_{T-\tau}(x)] d\tau + \sigma_{T-\tau} \, dW_\tau
+	\end{align} 
+\end{enumerate}
+
+
+
+
+\section{Stochastic Interpolants}
+\subsection{ODE Formulation}
+In score based diffusion, you were constrained to using the OU process as your measure transport. Notice there are many paths (in the space of probability distributions) to go from a base distribution (which was previously Gaussian) to a target distribution. For example consider the transport equation
+\begin{align}
+	\partial_t p_t(x) & = - \nabla \cdot (\mathbf b_t(x) \, p_t(x)), \\ p_{t=0} & = p_0
+\end{align}
+at $p_{t=0}$ it is our base distribution, and you want to select the drift vector field $\mathbf b_t(x)$ which gives your target $p_{t=1} = p_1$. This choice is non-unique, as there are many paths the particles could take from $p_0$ to $p_1$. So perhaps we should choose a path which is "easy" for samples to be transported.\\
+\\
+Let's be very ambitious. I'll declare a stochastic process
+\begin{align}
+	I_t = \alpha_t x_0 + \beta_t x_1 + \gamma_t  z
+\end{align}
+and I want to find the drift field $\mathbf b_t$ that forces the samples to be equal in distribution to $\text{Law}(I_t) = p_t$. We call this the \textbf{stochastic interpolant}. \begin{itemize}
+	\item The samples $(x_0, x_1) \sim \nu(x_0, x_1)$ are defined on a lifted measure s.t. it marginalizes appropriately
+	\begin{align}
+		\int \nu(x_0, x_1) \, dx_1 = p_0(x_0)  & & \int \nu(x_0, x_1) \, dx_0 = p_1(x_1)
+	\end{align}
+	An example is just making them independent $\nu(x_0, x_1) = p_0(x_0) p_1(x_1)$.
+	\item The $z \sim \mathcal N(0, \mathbb I)$ is a white noise term, so we'll make it $z \perp \nu(x_0, x_1)$.
+	\item Since the probability distribution has boundary conditions $p_{t=0} = p_0$ and $p_{t=1}= p_1$. We'd hope that $I_{t=0} = x_0 \sim p_0$ and $I_{t=1} = x_1 \sim p_1$. This implies
+		\begin{align}
+			\alpha_{t=0} = \beta_{t=1} = 1, \ \ \alpha_{t=1} = \beta_{t=0} = 0 , \ \ \gamma_{t=0} = \gamma_{t=1} = 0
+		\end{align}
+\end{itemize}
+We can derive the drift field by solving the equation. A nice trick is to solve it in Fourier space
+\begin{align}
+	\partial_t \tilde p_t(k) =  i \mathbf k \cdot \widetilde{\mathbf{b}_t p_t}(k)
+\end{align}
+where
+\begin{align}
+	\tilde p_t(k) & = \int e^{i k I_t} p(I_t)\, dI_t\\
+	& = \int \exp\left( ik (\alpha_t x_0  + \beta_t x_1 + \gamma_t \, z)\right) \nu(x_0, x_1) \, \mathcal N(z; 0, \mathbb I) \, d(x_0, x_1) \, dz
+\end{align}
+\begin{align}
+	\partial_t \tilde p_t(k) & = ik \int \dot I_t e^{ik I_t} p(I_t) dI_t\\	
+	& = ik \int \dot I_t e^{ik I_t} d\nu(x_0, x_1) \, d\mu(z) & p(I_t) dI_t = d\nu(x_0, x_1) d\mu(z)\\
+	& = ik \int  \dot I_t e^{ik x} \delta(I_t - x) d\nu(x_0, x_1) \, d\mu(z) \, dx & \text{Insert identity}\\
+	& = ik \ \int e^{ikx} \underbrace{\left(\int \dot I_t \, \frac{\delta(I_t - x) d\nu(x_0, x_1)}{p_t(x)} \, d\mu(z)\right)}_{= \mathbb E[\dot I_t | I_t = x]} \, p_t(x) dx
+\end{align}
+where $p_t(x) = \int \delta(I_t - x) d\nu(x_0, x_1) d\mu(z)$. This is the distribution $p(I_t)$ in disguise, you can see this by integrating against a test function. You can now see you satisfy the transport equation in Fourier space, therefore the drift field which satisfies $\text{Law}(I_t) = p_t$ is given by
+\begin{align}
+	\boxed{b_t(x) = \mathbb E[\dot I_t | I_t = x]}
+\end{align}
+
+\paragraph{Training}
+Now that we've specified our choice of stochastic interpolant, we should create a training goal. We'll use a neural network to approximate $\hat b_t(x) \approx b_t(x)$. A simple loss is mean-square error weighted by the probability distribution
+\begin{align}
+	\mathcal L(\hat b) & = \int_0^1 \mathbb E[|\hat b_t(I_t) - \dot I_t^2|^2] \, dt
+\end{align}
+After you've converged, you can plug in your estimate into a discretization of \ref{ode}. Notice this expectation is just over $p_0, p_1, t$; which in the generative problem you have access to.
+
+\paragraph{Inference}
+Because of the Fokker-Planck equation, I know the correspondance between the PDE on the distribution and the ODE on the samples.
+\begin{align}
+	\partial p_t (x) & = - \nabla \cdot (b_t(x) \, p_t(x)),  \ p_{t=0} = p_0\\
+	\iff \frac{d}{dt}X_t & = b_t(X_t), \ X_0 \sim p_0 \label{ode}
+\end{align} 
+So now I can transport samples by specifying a choice of a stochastic interpolants $I_t$. Computing $b_t(x)$ is difficult, as it implictly depends on $x_0,x_1,z$, so perhaps we can learn it.
+
+\subsection{SDE Formulation}
+To recap, you've figured out how to learn an ODE which has $\text{Law}(I_t) = p_t$. Perhaps we can extend these to SDEs. Consider the Fokker-Planck equation
+\begin{align}
+	\partial_t p(x) = - \nabla \cdot (b^F_t(x) \, p_t(x)) + \epsilon_t \Delta p_t(x)
+\end{align}
+what is the $b_t^F$ and $\epsilon_t$ that cause $\text{Law}(I_t) = p_t$? Instead of doing a bunch of Fourier stuff again, we can attempt to relate this current equation to the transport equation. Consider a decomposition of $b_t^F = b_t + f_t$, where $b_t(x) = \mathbb E[\dot I_t | I_t = x]$ is the drift from previously. Then
+\begin{align}
+	\partial_t p & = - \nabla \cdot (b_t \, p_t)  - \nabla \cdot (f_t \, p_t) + \epsilon_t \Delta p_t\\
+	\partial_t p & = \partial_t p_t - \nabla \cdot (f_t \, p_t) + \epsilon_t \Delta p_t\\
+	0 & = - \nabla \cdot (f_t \, p_t) + \epsilon_t \Delta p_t
+\end{align}
+By allowing the LHS and RHS $\partial_t p_t$ to cancel, you're implicitly saying the probability distribution that solved the transport also solves this Fokker Planck. Therefore any solution has $\text{Law}(I_t) = p_t$. Now we just have to choose $f_t$ to get rid of the other term, this ends up being $f_t = \epsilon_t \nabla_x \log p_t(x)$
+\begin{align}
+	0 & = -\epsilon_t \nabla \cdot(\nabla_x \log p_t \, p_t) + \epsilon_t \Delta p_t\\
+	& = - \epsilon_t \Delta p_t + \epsilon_t \Delta p_t = 0
+\end{align}
+Therefore
+\begin{align}
+	\boxed{b^F_t(x) = b_t(x) + \epsilon_t \nabla_x \log p_t(x)}
+\end{align}
+The question now is what is the score?
+Because $\text{Law}(I_t) = p_t$ and we want $\nabla_x \log p_t(x)$ we should inspect the density for $I_t$. Consider the conditional
+\begin{align}
+	p_t(x) & = (\rho_t * \mathcal N(0, \gamma_t^2 \mathbb I))(x)\\
+	& = \int \rho_t(a) \frac{\exp(-(x-a)^2/2\gamma_t^2)}{Z_t} \, da\\
+	\nabla_x \log p_t(x) & = \frac{\nabla_x p_t(x)}{p_t(x)} \\
+	& = \frac{1}{p_t(x)}\int -\frac{(x-a)}{\gamma_t^2}\rho_t(a) \frac{\exp(-(x-a)^2/2\gamma_t^2)}{Z_t} \, da\\
+	& = \frac{1}{ \int \rho_t(a) \frac{\exp(-(x-a)^2/2\gamma_t^2)}{Z_t} \, da} \int -\frac{(x-a)}{\gamma_t^2}\rho_t(a) \frac{\exp(-(x-a)^2/2\gamma_t^2)}{Z_t} \, da
+\end{align}
+Think about what you've written down here, $\rho_t = \text{Law}(I(t,x_0,x_1))$ and $\mathcal N(0, \gamma_t^2 \mathbb I) = \text{Law}(\gamma_t z )$. If $\mathcal N(0, \gamma_t^2 \mathbb I)$ is the likelihood and $\rho_t$ is the prior, by Bayes theorem, this is an expectation over the posterior.
+\begin{align}
+	& = \frac{\mathbb E[I(t,x_0,x_1) | I_t = x]  - x}{\gamma_t^2}\\
+	& = \frac{\mathbb E[I(t,x_0, x_1) - I_t | I_t =x]}{\gamma_t^2}\\
+	\Aboxed{\nabla_x \log p_t(x) & = - \frac{\mathbb E[z|I_t = x]}{\gamma_t}} & \text{By def } I_t = I(t,x_0,x_1) + \gamma_t z
+\end{align}
+Directly the score is not very viable, so we'll approximate it with a neural network. Due to $\gamma_t \to 0$ at $t=0,1$, it'll be a numerically unstable quantity. Instead we'll instead learn just $\mathbb E[z | I_t = x]$; we'll denote this as the \textbf{denoiser}.
+\begin{align}
+	\boxed{\eta(x) = \mathbb E[z | I_t = x]}
+\end{align}
+To train the model, you once again use the fact that the conditional expectation is the minimizer in MSE.
+\paragraph{Inference} The learned drift \& denoiser satisfy the Fokker-Planck equation
+\begin{align}
+	\partial_t p & = - \nabla \cdot (b_t^F \, p_t) + \epsilon_t \Delta p_t\\
+	\iff dX_t & = b_t^F (X_t) \, dt + \sqrt{2 \epsilon_t} \, dW_t\\
+	& =  \left[b_t(X_t) - \frac{\epsilon_t }{\gamma_t} \eta_t(X_t) \right] dt + \sqrt{2 \epsilon_t} \, dW_t 
+\end{align}
+So if you have access to samples $X_0 \sim p_0$, then you can sample $p_1$. Additionally, you can tune $\epsilon_t$ after training to optimize performance.
+
+
+
+
+
+
+
+
